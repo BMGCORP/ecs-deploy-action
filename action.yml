@@ -1,81 +1,87 @@
-name: 'Hello World'
-description: 'Greet someone'
+name: 'AWS-ECS-deploy'
+description: 'Deploy service to ECS'
 inputs:
-  service:  # id of input
-    description: 'Service name'
+  service:
+    description: Service name
+    required: true
+  aws-access-key-id:
+    description: Aws access key id
+    required: true
+  aws-secret-access-key:
+    description: Aws access key
     required: true
 runs:
   using: "composite"
   steps:
-      - name: Set env apram
-        shell: bash
-        run: |
-          BRANCH_NAME=${GITHUB_REF/refs\/heads\/}
-          echo BRANCH_NAME=${BRANCH_NAME} >> $GITHUB_ENV
-          echo NORMALIZED_BRANCH_NAME=${BRANCH_NAME//[^A-Za-z0-9-_]/_} >> $GITHUB_ENV
-          if [ "$BRANCH_NAME" == 'production' ]; then
-            DEPLOY_ENV=Prod
-          else
-            DEPLOY_ENV=Staging
-          fi
-          echo DEPLOY_ENV=${DEPLOY_ENV} >> $GITHUB_ENV
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+    - name: Set env apram
+      shell: bash
+      run: |
+        BRANCH_NAME=${GITHUB_REF/refs\/heads\/}
+        echo BRANCH_NAME=${BRANCH_NAME} >> $GITHUB_ENV
+        echo NORMALIZED_BRANCH_NAME=${BRANCH_NAME//[^A-Za-z0-9-_]/_} >> $GITHUB_ENV
+        if [ "$BRANCH_NAME" == 'production' ]; then
+          DEPLOY_ENV=Prod
+        else
+          DEPLOY_ENV=Staging
+        fi
+        echo DEPLOY_ENV=${DEPLOY_ENV} >> $GITHUB_ENV
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: us-east-1
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v1
 
-      - name: set vars
-        shell: bash
-        run: |
-          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@, \`$DEPLOY_ENV-MainCluster\`) == \`true\`] | [-1]" --output text)
-          SERVICE=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`) == `true`] | [-1]' --output text)
-          TASK_DEFINITION=$(aws ecs list-task-definitions --status ACTIVE --query 'taskDefinitionArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`)]' --page-size 100 --output text \
-                            | sed -E "s/[\t]/\n/g" \
-                            | xargs -d "\n" -I {} sh -c 'R=$(aws ecs describe-task-definition --task-definition "{}" --output text --query "taskDefinition.registeredAt") && echo "$R {}"' \
-                            |  sort \
-                            | cut -d " " -f 2 \
-                            | tail -1)
-          CONTAINER_NAME=$(aws ecs describe-task-definition --task-definition $TASK_DEFINITION --query taskDefinition.containerDefinitions[0].name | tr -d '"')
-          echo CLUSTER=${CLUSTER} >> $GITHUB_ENV
-          echo CONTAINER_NAME=${CONTAINER_NAME} >> $GITHUB_ENV
-          echo SERVICE=${SERVICE} >> $GITHUB_ENV
-          echo TASK_DEFINITION=${TASK_DEFINITION} >> $GITHUB_ENV
+    - name: set vars
+      shell: bash
+      run: |
+        CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@, \`$DEPLOY_ENV-MainCluster\`) == \`true\`] | [-1]" --output text)
+        SERVICE=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`) == `true`] | [-1]' --output text)
+        TASK_DEFINITION=$(aws ecs list-task-definitions --status ACTIVE --query 'taskDefinitionArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`)]' --page-size 100 --output text \
+                          | sed -E "s/[\t]/\n/g" \
+                          | xargs -d "\n" -I {} sh -c 'R=$(aws ecs describe-task-definition --task-definition "{}" --output text --query "taskDefinition.registeredAt") && echo "$R {}"' \
+                          |  sort \
+                          | cut -d " " -f 2 \
+                          | tail -1)
+        CONTAINER_NAME=$(aws ecs describe-task-definition --task-definition $TASK_DEFINITION --query taskDefinition.containerDefinitions[0].name | tr -d '"')
+        echo CLUSTER=${CLUSTER} >> $GITHUB_ENV
+        echo CONTAINER_NAME=${CONTAINER_NAME} >> $GITHUB_ENV
+        echo SERVICE=${SERVICE} >> $GITHUB_ENV
+        echo TASK_DEFINITION=${TASK_DEFINITION} >> $GITHUB_ENV
 
-      - name: Download task definition
-        shell: bash
-        run: |
-          aws ecs describe-task-definition \
-             --task-definition ${{ env.TASK_DEFINITION }} \
-             --query taskDefinition > task-definition.json
+    - name: Download task definition
+      shell: bash
+      run: |
+        aws ecs describe-task-definition \
+           --task-definition ${{ env.TASK_DEFINITION }} \
+           --query taskDefinition > task-definition.json
 
-      - name: Fill in the new image ID in the Amazon ECS task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: task-definition.json
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.DOCKER_REPO }}:${{ env.IMAGE_TAG }}
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ env.DOCKER_REPO }}:${{ env.IMAGE_TAG }}
 
-      - name: Deploy Amazon ECS task definition
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          cluster: ${{ env.CLUSTER }}
-          service: ${{ env.SERVICE }}
-          #wait-for-service-stability: true
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        cluster: ${{ env.CLUSTER }}
+        service: ${{ env.SERVICE }}
+        #wait-for-service-stability: true
 
-      - name: Cleanup old task definitions
-        shell: bash
-        run:  |
-          aws ecs list-task-definitions --status ACTIVE --query 'taskDefinitionArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`)]' --page-size 100 --output text \
-              | sed -E "s/[\t]/\n/g" \
-              | xargs -d "\n" -I {} sh -c 'R=$(aws ecs describe-task-definition --task-definition "{}" --output text --query "taskDefinition.registeredAt") && echo "$R {}"' \
-              |  sort \
-              | head -n -10 \
-              | cut -d " " -f 2 \
-              | xargs -d "\n" -I {} aws ecs deregister-task-definition --task-definition {} --output text
+    - name: Cleanup old task definitions
+      shell: bash
+      run:  |
+        aws ecs list-task-definitions --status ACTIVE --query 'taskDefinitionArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`)]' --page-size 100 --output text \
+            | sed -E "s/[\t]/\n/g" \
+            | xargs -d "\n" -I {} sh -c 'R=$(aws ecs describe-task-definition --task-definition "{}" --output text --query "taskDefinition.registeredAt") && echo "$R {}"' \
+            |  sort \
+            | head -n -10 \
+            | cut -d " " -f 2 \
+            | xargs -d "\n" -I {} aws ecs deregister-task-definition --task-definition {} --output text
