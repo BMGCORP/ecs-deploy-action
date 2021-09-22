@@ -30,7 +30,7 @@ runs:
 
       - name: set vars
         run: |
-          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@, \`FridayPlans$DEPLOY_ENV-MainCluster\`) == \`true\`] | [-1]" --output text)
+          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@, \`$DEPLOY_ENV-MainCluster\`) == \`true\`] | [-1]" --output text)
           SERVICE=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`) == `true`] | [-1]' --output text)
           TASK_DEFINITION=$(aws ecs list-task-definitions --status ACTIVE --query 'taskDefinitionArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`)]' --page-size 100 --output text \
                             | sed -E "s/[\t]/\n/g" \
