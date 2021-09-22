@@ -39,8 +39,8 @@ runs:
       shell: bash
       run: |
         CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@, \`$DEPLOY_ENV-MainCluster\`) == \`true\`] | [-1]" --output text)
-        SERVICE=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`) == `true`] | [-1]' --output text)
-        TASK_DEFINITION=$(aws ecs list-task-definitions --status ACTIVE --query 'taskDefinitionArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`)]' --page-size 100 --output text \
+        SERVICE=$(aws ecs list-services --cluster $CLUSTER --query "serviceArns[?contains(@, \`$DEPLOY_ENV-${{ inputs.service }}\`) == `true`] | [-1]" --output text)
+        TASK_DEFINITION=$(aws ecs list-task-definitions --status ACTIVE --query "taskDefinitionArns[?contains(@, \`$DEPLOY_ENV-${{ inputs.service }}\`)]" --page-size 100 --output text \
                           | sed -E "s/[\t]/\n/g" \
                           | xargs -d "\n" -I {} sh -c 'R=$(aws ecs describe-task-definition --task-definition "{}" --output text --query "taskDefinition.registeredAt") && echo "$R {}"' \
                           |  sort \
@@ -78,7 +78,7 @@ runs:
     - name: Cleanup old task definitions
       shell: bash
       run:  |
-        aws ecs list-task-definitions --status ACTIVE --query 'taskDefinitionArns[?contains(@, `$DEPLOY_ENV-${{ inputs.service }}`)]' --page-size 100 --output text \
+        aws ecs list-task-definitions --status ACTIVE --query "taskDefinitionArns[?contains(@, \`$DEPLOY_ENV-${{ inputs.service }}\`)]" --page-size 100 --output text \
             | sed -E "s/[\t]/\n/g" \
             | xargs -d "\n" -I {} sh -c 'R=$(aws ecs describe-task-definition --task-definition "{}" --output text --query "taskDefinition.registeredAt") && echo "$R {}"' \
             |  sort \
