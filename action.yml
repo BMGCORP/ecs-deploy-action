@@ -80,6 +80,7 @@ runs:
       run:  |
         aws ecs list-task-definitions --status ACTIVE --query "taskDefinitionArns[?contains(@, \`$DEPLOY_ENV-${{ inputs.service }}\`)]" --page-size 100 --output text \
             | sed -E "s/[\t]/\n/g" \
+            | sed -E "/\:1$/d" \
             | xargs -d "\n" -I {} sh -c 'R=$(aws ecs describe-task-definition --task-definition "{}" --output text --query "taskDefinition.registeredAt") && echo "$R {}"' \
             |  sort \
             | head -n -10 \
